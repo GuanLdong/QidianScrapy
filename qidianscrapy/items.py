@@ -19,6 +19,3 @@ class QidianscrapyItem(scrapy.Item):
     FictionClass2 = scrapy.Field()
     State = scrapy.Field()
     Number = scrapy.Field()
-
-
-

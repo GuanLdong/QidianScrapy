@@ -7,19 +7,38 @@ from io import BytesIO
 from fontTools.ttLib import TTFont
 import requests
 import re
+from lxml import etree
 
 class QidianSpider(scrapy.Spider):
     name = 'qidian'
-    allowed_domains = ['qidian.com']
+    allowed_domains = ['www.qidian.com']
     def __init__(self):
-        self.start_urls = 'http://a.qidian.com/?page='
+        self.start_url = 'https://www.qidian.com/all?chanId=21&subCateId=8&orderId=&page=1&style=1&pageSize=20&siteid=1&pubflag=0&hiddenField=0'
+        self.cmap = self.get_font('https://www.qidian.com/all?chanId=21&orderId=&page=1&style=1&pageSize=20&siteid=1&pubflag=0&hiddenField=0')
+        self.urls = self.getUrl(self.start_url)
 
-    def get_font(self,url):
+    def get_font(self,Pageurl):
+        response = requests.get(Pageurl).text
+        doc = pq(response)
+        # 获取当前字体文件名称
+        fonturl = doc('p.update > span > style').text()
+        url = re.search('woff.*?url.*?\'(.+?)\'.*?truetype', fonturl).group(1)
         response = requests.get(url)
         font = TTFont(BytesIO(response.content))
         cmap = font.getBestCmap()
         font.close()
         return cmap
+
+    def getUrl(self,start_url):
+        urlList = []
+        response = etree.HTML(requests.get(start_url).text)
+        first_item = response.xpath('/html/body/div[2]/div[5]/div[1]/div[3]/div[1]/ul//li/a/@href')
+        # average 4 select 1
+        for url in first_item[1::4]:
+            targetUrl = 'https:' + url
+            val = etree.HTML(requests.get(targetUrl).text)
+            urlList.extend(val.xpath('/html/body/div[2]/div[5]/div[1]/div[3]/div[1]/div/dl//@href'))
+        return urlList
 
     def get_encode(self,cmap,values):
         WORD_MAP = {'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6',
@@ -32,22 +51,23 @@ class QidianSpider(scrapy.Spider):
         return word_count
 
     def start_requests(self):
-        for page in range(1,self.settings.get('MAX_PAGE')+1):
-            url = self.start_urls+str(page)
-            yield Request(url,self.parse)
+        for url in self.urls:
+
+            url = 'https:'+url
+            response = etree.HTML(requests.get(url).text)
+            pageNum = int(response.xpath('//*[@id="page-container"]/div/ul/li[8]//@data-page')[0])
+            for page in range(2,pageNum):
+                url = re.sub('&page=[0-9]+','',url)+'&page='+str(page)
+                yield Request(url,self.parse)
 
     def parse(self, response):
-
         doc = pq(response.text)
         # 获取当前字体文件名称
         classattr = doc('p.update > span > span').attr('class')
         pattern = '</style><span.*?%s.*?>(.*?)</span>' % classattr
         # 获取当前页面所有被字数字符
         numberlist = re.findall(pattern, response.text)
-        fonturl = doc('p.update > span > style').text()
-        # 通过正则获取当前页面字体文件链接
-        url = re.search('woff.*?url.*?\'(.+?)\'.*?truetype', fonturl).group(1)
-        cmap = self.get_font(url)
+
 
         quotes = response.xpath('/html/body/div[2]/div[5]/div[2]/div[2]/div/ul/li/div[2]')
         i=0
@@ -60,6 +80,10 @@ class QidianSpider(scrapy.Spider):
             item['FictionClass2'] = quote.xpath('child::p[1]/a[3]/text()').extract_first()
             item['State'] = quote.xpath('child::p[1]/span/text()').extract_first()
             item['Content'] = quote.xpath('child::p[2]/text()').extract_first().strip()
-            item['Number'] = self.get_encode(cmap,numberlist[i][:-1])
+            try:
+                item['Number'] = self.get_encode(self.cmap,numberlist[i][:-1])
+            except KeyError:
+                self.cmap = self.get_font(response.url)
+                item['Number'] = self.get_encode(self.cmap, numberlist[i][:-1])
             i+=1
             yield item

@@ -8,7 +8,7 @@
 #     https://doc.scrapy.org/en/latest/topics/settings.html
 #     https://doc.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://doc.scrapy.org/en/latest/topics/spider-middleware.html
-MAX_PAGE = 58000
+MAX_PAGE = 60000
 
 BOT_NAME = 'qidianscrapy'
 
