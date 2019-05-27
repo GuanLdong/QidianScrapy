@@ -13,7 +13,7 @@ class QidianSpider(scrapy.Spider):
     name = 'qidian'
     allowed_domains = ['www.qidian.com']
     def __init__(self):
-        self.start_url = 'https://www.qidian.com/all?chanId=21&subCateId=8&orderId=&page=1&style=1&pageSize=20&siteid=1&pubflag=0&hiddenField=0'
+        self.start_url = 'https://www.qidian.com/all?%27'
         self.cmap = self.get_font('https://www.qidian.com/all?chanId=21&orderId=&page=1&style=1&pageSize=20&siteid=1&pubflag=0&hiddenField=0')
         self.urls = self.getUrl(self.start_url)
 
@@ -32,12 +32,13 @@ class QidianSpider(scrapy.Spider):
     def getUrl(self,start_url):
         urlList = []
         response = etree.HTML(requests.get(start_url).text)
-        first_item = response.xpath('/html/body/div[2]/div[5]/div[1]/div[3]/div[1]/ul//li/a/@href')
+        # choose mian classify
+        first_item = response.xpath('/html/body/div[1]/div[5]/div[1]/div[3]/div[1]/ul//li/a/@href')
         # average 4 select 1
         for url in first_item[1::4]:
             targetUrl = 'https:' + url
             val = etree.HTML(requests.get(targetUrl).text)
-            urlList.extend(val.xpath('/html/body/div[2]/div[5]/div[1]/div[3]/div[1]/div/dl//@href'))
+            urlList.extend(val.xpath('/html/body/div[1]/div[5]/div[1]/div[3]/div[1]/div/dl//@href'))
         return urlList
 
     def get_encode(self,cmap,values):
@@ -52,12 +53,10 @@ class QidianSpider(scrapy.Spider):
 
     def start_requests(self):
         for url in self.urls:
-
             url = 'https:'+url
-            response = etree.HTML(requests.get(url).text)
-            pageNum = int(response.xpath('//*[@id="page-container"]/div/ul/li[8]//@data-page')[0])
-            for page in range(2,pageNum):
-                url = re.sub('&page=[0-9]+','',url)+'&page='+str(page)
+            # page number
+            for i in range(1,5):
+                url = url.replace(str(i),str(i+1))
                 yield Request(url,self.parse)
 
     def parse(self, response):
@@ -67,19 +66,20 @@ class QidianSpider(scrapy.Spider):
         pattern = '</style><span.*?%s.*?>(.*?)</span>' % classattr
         # 获取当前页面所有被字数字符
         numberlist = re.findall(pattern, response.text)
-
-
-        quotes = response.xpath('/html/body/div[2]/div[5]/div[2]/div[2]/div/ul/li/div[2]')
+        try:
+            quotes = response.xpath('/html/body/div[1]/div[5]/div[2]/div[2]/div/ul/li/div[2]')
+        except:
+            print('Xpath 1 change, please check')
         i=0
         for quote in quotes:
             item = QidianscrapyItem()
-            item['Title'] = quote.xpath('child::h4/a/text()').extract_first()
-            item['Author'] = quote.xpath('child::p[1]/a[1]/text()').extract_first()
-            item['Url'] = 'https:'+quote.xpath('child::h4/a/@href').extract_first()
-            item['FictionClass1'] = quote.xpath('child::p[1]/a[2]/text()').extract_first()
-            item['FictionClass2'] = quote.xpath('child::p[1]/a[3]/text()').extract_first()
-            item['State'] = quote.xpath('child::p[1]/span/text()').extract_first()
-            item['Content'] = quote.xpath('child::p[2]/text()').extract_first().strip()
+            item['Title'] = quote.xpath('h4/a/text()').extract_first()
+            item['Author'] = quote.xpath('p[1]/a[1]/text()').extract_first()
+            item['Url'] = 'https:'+quote.xpath('h4/a/@href').extract_first()
+            item['FictionClass1'] = quote.xpath('p[1]/a[2]/text()').extract_first()
+            item['FictionClass2'] = quote.xpath('p[1]/a[3]/text()').extract_first()
+            item['State'] = quote.xpath('p[1]/span/text()').extract_first()
+            item['Content'] = quote.xpath('p[2]/text()').extract_first().strip()
             try:
                 item['Number'] = self.get_encode(self.cmap,numberlist[i][:-1])
             except KeyError:
